@@ -909,7 +909,44 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = old_resolution
             self.aspect_ratio = old_aspect_ratio
 
-  
+    @quick_mode_group.command("手办化")
+    async def quick_figure(self, event: AstrMessageEvent, prompt: str):
+        """手办化快速模式 - 树脂收藏级手办效果"""
+        allowed, limit_message = await self._check_and_consume_limit(event)
+        if not allowed:
+            if limit_message:
+                yield event.plain_result(limit_message)
+            return
+
+        yield event.plain_result("🎨 使用手办化模式生成图像...")
+
+        base_prompt = (
+            "将画面中的角色重塑为顶级收藏级树脂手办，全身动态姿势，置于角色主题底座，高精度材质，手工涂装，"
+            "肌肤纹理与服装材质真实分明。戏剧性硬光为主光源，凸显立体感，无过曝；强效补光消除死黑，细节完整可见。"
+            "背景为窗边景深模糊，侧后方隐约可见产品包装盒。博物馆级摄影质感，全身细节无损，面部结构精准。"
+            "禁止：任何2D元素或照搬原图、塑料感、面部模糊、五官错位、细节丢失。"
+        )
+        full_prompt = base_prompt if not prompt else f"{base_prompt}\n{prompt}"
+
+        # 临时调整分辨率与比例以适配手办展示效果
+        old_resolution = self.resolution
+        old_aspect_ratio = self.aspect_ratio
+
+        try:
+            self.resolution = "2K"
+            self.aspect_ratio = "3:2"
+
+            # 使用与其他快速模式一致的头像逻辑
+            use_avatar = await self.should_use_avatar(event)
+
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
+                yield result
+        finally:
+            self.resolution = old_resolution
+            self.aspect_ratio = old_aspect_ratio
+
     @filter.command("生图帮助")
     async def show_help(self, event: AstrMessageEvent):
         """显示插件使用帮助"""
@@ -984,7 +1021,7 @@ class GeminiImageGenerationPlugin(Star):
 /快速 [预设] [描述]
 ```
 > 使用预设参数快速生成图像
-> 预设: 头像/海报/壁纸/卡片/手机
+> 预设: 头像/海报/壁纸/卡片/手机/手办化
 > 示例: `/快速 头像 生成专业的个人头像`
 
 ```
@@ -1223,7 +1260,7 @@ class GeminiImageGenerationPlugin(Star):
 
             <h3><span class="command">/快速 [预设] [描述]</span></h3>
             <p>使用预设参数快速生成图像</p>
-            <p class="example">预设: 头像/海报/壁纸/卡片/手机</p>
+            <p class="example">预设: 头像/海报/壁纸/卡片/手机/手办化</p>
             <p class="example">示例: /快速 头像 生成专业的个人头像</p>
 
             <h3><span class="command">/改图 [描述]</span></h3>
@@ -1302,7 +1339,7 @@ class GeminiImageGenerationPlugin(Star):
 • /换风格 [风格] - 风格转换
 • /生图帮助 - 显示帮助
 
-预设选项: 头像/海报/壁纸/卡片/手机
+预设选项: 头像/海报/壁纸/卡片/手机/手办化
 
 当前配置:
 • 模型: {self.model}
