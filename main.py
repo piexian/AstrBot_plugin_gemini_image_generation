@@ -6,6 +6,7 @@ AstrBot Gemini 图像生成插件主文件
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import time
 from pathlib import Path
@@ -309,6 +310,51 @@ class GeminiImageGenerationPlugin(Star):
         """输出debug级别日志"""
         logger.debug(message)
 
+    @staticmethod
+    def _is_valid_base64_image_str(value: str) -> bool:
+        """粗略判断字符串是否为有效的 base64 图像数据或 data URL"""
+        if not value:
+            return False
+
+        # 已经是 data URL 的情况，要求包含 ';base64,'
+        if value.startswith("data:image/"):
+            return ";base64," in value
+
+        # 纯 base64 数据：尝试严格解码
+        try:
+            base64.b64decode(value, validate=True)
+            return True
+        except Exception:
+            return False
+
+    def _filter_valid_reference_images(
+        self, images: list[str] | None, source: str
+    ) -> list[str]:
+        """
+        过滤出合法的 base64 / data URL 参考图像。
+
+        NapCat 等平台的图片 file_id（例如 D127D0...jpg）会在这里被过滤掉，
+        避免传给 Gemini 导致 Base64 解码错误。
+        """
+        if not images:
+            return []
+
+        valid: list[str] = []
+        for img in images:
+            if not isinstance(img, str) or not img:
+                self.log_debug(f"跳过非字符串参考图像({source}): {type(img)}")
+                continue
+
+            if self._is_valid_base64_image_str(img):
+                valid.append(img)
+            else:
+                # 只打一点点前缀，避免日志过长
+                self.log_debug(
+                    f"跳过非 base64 格式参考图像({source}): {img[:64]}..."
+                )
+
+        return valid
+
     def _get_group_id_from_event(self, event: AstrMessageEvent) -> str | None:
         """从事件中解析群ID，仅在群聊场景下返回"""
         try:
@@ -471,20 +517,14 @@ class GeminiImageGenerationPlugin(Star):
         if not self.api_client:
             return False, "❌ 错误: API 客户端未初始化，请联系管理员配置 API 密钥"
 
-        # 合并所有参考图片，确保只包含base64字符串
-        all_reference_images = []
-        if reference_images:
-            for img in reference_images:
-                if isinstance(img, str) and img:
-                    all_reference_images.append(img)
-                elif hasattr(img, '__class__'):
-                    logger.warning(f"跳过非字符串的参考图片: {type(img)}")
-        if avatar_reference:
-            for img in avatar_reference:
-                if isinstance(img, str) and img:
-                    all_reference_images.append(img)
-                elif hasattr(img, '__class__'):
-                    logger.warning(f"跳过非字符串的头像图片: {type(img)}")
+        # 合并所有参考图片，确保只包含 base64 / data URL 字符串
+        all_reference_images: list[str] = []
+        all_reference_images.extend(
+            self._filter_valid_reference_images(reference_images, source="消息图片")
+        )
+        all_reference_images.extend(
+            self._filter_valid_reference_images(avatar_reference, source="头像")
+        )
 
         # 限制参考图片数量
         if (
@@ -633,19 +673,13 @@ class GeminiImageGenerationPlugin(Star):
                 avatars = await self.get_avatar_reference(event)
 
             # 合并参考图片和头像，确保只包含base64字符串
-            all_ref_images = []
-            if ref_images:
-                for img in ref_images:
-                    if isinstance(img, str) and img:
-                        all_ref_images.append(img)
-                    elif hasattr(img, '__class__'):
-                        logger.warning(f"跳过非字符串的参考图片: {type(img)}")
-            if avatars:
-                for img in avatars:
-                    if isinstance(img, str) and img:
-                        all_ref_images.append(img)
-                    elif hasattr(img, '__class__'):
-                        logger.warning(f"跳过非字符串的头像图片: {type(img)}")
+            all_ref_images: list[str] = []
+            all_ref_images.extend(
+                self._filter_valid_reference_images(ref_images, source="消息图片")
+            )
+            all_ref_images.extend(
+                self._filter_valid_reference_images(avatars, source="头像")
+            )
 
             # 检测是否需要手办化增强
             figure_keywords = ["手办", "figure", "模型", "手办化", "手办模型"]
