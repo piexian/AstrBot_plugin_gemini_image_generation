@@ -239,12 +239,39 @@ class GeminiAPIClient:
                     {"type": "image_url", "image_url": {"url": image_str}}
                 )
 
-        payload = {
+        # OpenAI 兼容接口下：
+        # - 使用 chat/completions
+        # - modalities: ["image", "text"]
+        # - image_config: {aspect_ratio, image_size}
+        # - tools: [{google_search:{}}]（当启用搜索接地时）
+        payload: dict[str, Any] = {
             "model": config.model,
             "messages": [{"role": "user", "content": message_content}],
             "max_tokens": config.max_tokens,
             "temperature": 0.7,
+            "modalities": ["image", "text"],
         }
+
+        # image_config 与 Gemini 3 Pro Image 模型相关的配置
+        image_config: dict[str, Any] = {}
+
+        if config.aspect_ratio:
+            image_config["aspect_ratio"] = config.aspect_ratio
+
+        # 仅在 Gemini 3 Pro Image 系列模型下传递 image_size
+        model_name = (config.model or "").lower()
+        is_gemini_image_model = "gemini-3-pro-image" in model_name
+
+        if is_gemini_image_model and config.resolution:
+            # 前端 router 侧直接传递 "1K"/"2K"/"4K"，这里保持一致
+            image_config["image_size"] = config.resolution
+
+        if image_config:
+            payload["image_config"] = image_config
+
+        # 与前端 router 一致：启用搜索接地时，通过 tools.google_search 控制
+        if is_gemini_image_model and config.enable_grounding:
+            payload["tools"] = [{"google_search": {}}]
 
         return payload
 
