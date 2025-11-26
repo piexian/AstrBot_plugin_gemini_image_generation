@@ -60,7 +60,7 @@ class GeminiImageGenerationPlugin(Star):
                 "tool_call_timeout", 60
             )
         except Exception as e:
-            logger.warning(f"获取 tool_call_timeout 配置失败: {e}，使用默认值 b'y'g 秒")
+            logger.warning(f"获取 tool_call_timeout 配置失败: {e}，使用默认值 60 秒")
             return 60
 
     async def get_avatar_reference(self, event: AstrMessageEvent) -> list[str]:
