@@ -26,11 +26,15 @@ try:
     from .tl_utils import get_plugin_data_dir, save_base64_image, save_image_data
 except ImportError:
     # 如果tl_utils不存在，先创建简单的占位符
-    async def save_base64_image(base64_data: str, image_format: str = "png") -> str | None:
+    async def save_base64_image(
+        base64_data: str, image_format: str = "png"
+    ) -> str | None:
         """占位符函数"""
         return None
 
-    async def save_image_data(image_data: bytes, image_format: str = "png") -> str | None:
+    async def save_image_data(
+        image_data: bytes, image_format: str = "png"
+    ) -> str | None:
         """占位符函数"""
         return None
 
@@ -195,13 +199,15 @@ class GeminiAPIClient:
                 "16:9": "16:9",
                 "9:16": "9:16",
                 "3:2": "3:2",
-                "4:3": "4:3"
+                "4:3": "4:3",
             }
             ratio = ratio_map.get(config.aspect_ratio, config.aspect_ratio)
             image_config["aspect_ratio"] = ratio
             logger.debug(f"设置长宽比: {ratio}")
         elif config.aspect_ratio:
-            logger.warning(f"不支持的长宽比格式: {config.aspect_ratio}，将使用默认长宽比")
+            logger.warning(
+                f"不支持的长宽比格式: {config.aspect_ratio}，将使用默认长宽比"
+            )
 
         if image_config:
             generation_config["image_config"] = image_config
@@ -225,7 +231,9 @@ class GeminiAPIClient:
 
         # 调试：记录 image_config
         if "image_config" in generation_config:
-            logger.debug(f"实际发送的 image_config: {generation_config['image_config']}")
+            logger.debug(
+                f"实际发送的 image_config: {generation_config['image_config']}"
+            )
 
         return payload
 
@@ -325,7 +333,9 @@ class GeminiAPIClient:
                 try:
                     with urllib.request.urlopen(image_str, timeout=8) as resp:
                         content_type = resp.headers.get("Content-Type", "image/png")
-                        mime_type = content_type.split(";")[0] if content_type else "image/png"
+                        mime_type = (
+                            content_type.split(";")[0] if content_type else "image/png"
+                        )
                         data_bytes = resp.read()
                         if data_bytes:
                             data = base64.b64encode(data_bytes).decode("utf-8")
@@ -334,7 +344,9 @@ class GeminiAPIClient:
                     logger.warning(f"下载参考图失败: {e}")
 
             # 尝试解析为裸/宽松 base64 数据（在文件路径之前，避免长字符串导致 "File name too long"）
-            if len(image_str) > 255 or not any(char in image_str for char in ["/", "\\", "."]):
+            if len(image_str) > 255 or not any(
+                char in image_str for char in ["/", "\\", "."]
+            ):
                 try:
                     cleaned = image_str.replace("\n", "").replace(" ", "")
                     decoded = base64.b64decode(cleaned, validate=False)
@@ -411,7 +423,12 @@ class GeminiAPIClient:
         return url, headers, payload
 
     async def generate_image(
-        self, config: ApiRequestConfig, max_retries: int = 3, total_timeout: int = 120, per_retry_timeout: int = None, max_total_time: int = None
+        self,
+        config: ApiRequestConfig,
+        max_retries: int = 3,
+        total_timeout: int = 120,
+        per_retry_timeout: int = None,
+        max_total_time: int = None,
     ) -> tuple[str | None, str | None, str | None, str | None]:
         """
         生成图像
@@ -472,10 +489,14 @@ class GeminiAPIClient:
         while current_retry < max_retries:
             try:
                 # 每个重试使用独立的超时控制，不共享总超时时间
-                timeout = aiohttp.ClientTimeout(total=total_timeout, sock_read=total_timeout)
+                timeout = aiohttp.ClientTimeout(
+                    total=total_timeout, sock_read=total_timeout
+                )
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     logger.debug(f"发送请求（重试 {current_retry}/{max_retries - 1}）")
-                    return await self._perform_request(session, url, payload, headers, api_type, model)
+                    return await self._perform_request(
+                        session, url, payload, headers, api_type, model
+                    )
 
             except asyncio.CancelledError:
                 # 只有框架取消才不重试（这是最顶层的超时）
@@ -489,7 +510,9 @@ class GeminiAPIClient:
                 # 判断是否可重试的错误
                 if self._is_retryable_error(error_type, e):
                     last_error = APIError(error_msg, None, error_type)
-                    logger.warning(f"可重试错误 (重试 {current_retry + 1}/{max_retries}): {error_msg}")
+                    logger.warning(
+                        f"可重试错误 (重试 {current_retry + 1}/{max_retries}): {error_msg}"
+                    )
 
                     current_retry += 1
                     if current_retry < max_retries:
@@ -640,7 +663,11 @@ class GeminiAPIClient:
                 # 兼容 camelCase 与 snake_case 的图像返回字段
                 inline_data = part.get("inlineData") or part.get("inline_data")
                 if inline_data and not part.get("thought", False):
-                    mime_type = inline_data.get("mimeType") or inline_data.get("mime_type") or "image/png"
+                    mime_type = (
+                        inline_data.get("mimeType")
+                        or inline_data.get("mime_type")
+                        or "image/png"
+                    )
                     base64_data = inline_data.get("data", "")
 
                     logger.debug(
@@ -670,15 +697,15 @@ class GeminiAPIClient:
                 elif "thought" in part and part.get("thought", False):
                     logger.debug(f"第 {i} 个part是思考内容")
                 else:
-                    logger.debug(f"第 {i} 个part不是图像也不是思考: {list(part.keys())}")
+                    logger.debug(
+                        f"第 {i} 个part不是图像也不是思考: {list(part.keys())}"
+                    )
             except Exception as e:
                 logger.error(f"处理第 {i} 个part时出错: {e}", exc_info=True)
 
         # 查找文本内容
         logger.debug("📝 搜索文本内容...")
-        text_parts = [
-            p for p in parts if "text" in p and not p.get("thought", False)
-        ]
+        text_parts = [p for p in parts if "text" in p and not p.get("thought", False)]
         if text_parts:
             text_content = " ".join([p["text"] for p in text_parts])
             logger.debug(f"🎯 找到文本内容: {text_content[:100]}...")
@@ -722,7 +749,6 @@ class GeminiAPIClient:
             choice = response_data["choices"][0]
             message = choice.get("message", {})
             content = message.get("content", "")
-
 
             text_chunks: list[str] = []
             image_candidates: list[str] = []
@@ -768,13 +794,19 @@ class GeminiAPIClient:
 
             # 按顺序处理图像候选
             for candidate_url in image_candidates:
-                if isinstance(candidate_url, str) and candidate_url.startswith("data:image/"):
+                if isinstance(candidate_url, str) and candidate_url.startswith(
+                    "data:image/"
+                ):
                     image_url, image_path = await self._parse_data_uri(candidate_url)
                 elif isinstance(candidate_url, str):
                     # 对于可访问的 http(s) 链接，直接返回 URL，避免重复下载占用带宽
-                    if candidate_url.startswith("http://") or candidate_url.startswith("https://"):
+                    if candidate_url.startswith("http://") or candidate_url.startswith(
+                        "https://"
+                    ):
                         return candidate_url, None, text_content, thought_signature
-                    image_url, image_path = await self._download_image(candidate_url, session)
+                    image_url, image_path = await self._download_image(
+                        candidate_url, session
+                    )
                 else:
                     logger.warning(f"跳过非字符串类型的图像URL: {type(candidate_url)}")
                     continue
@@ -784,9 +816,13 @@ class GeminiAPIClient:
 
             # content 中查找内联 data URI（文本里）
             if isinstance(content, str):
-                extracted_url, extracted_path = await self._extract_from_content(content)
+                extracted_url, extracted_path = await self._extract_from_content(
+                    content
+                )
             elif text_content:
-                extracted_url, extracted_path = await self._extract_from_content(text_content)
+                extracted_url, extracted_path = await self._extract_from_content(
+                    text_content
+                )
             else:
                 extracted_url, extracted_path = (None, None)
 
@@ -797,7 +833,9 @@ class GeminiAPIClient:
         elif "data" in response_data and response_data["data"]:
             for image_item in response_data["data"]:
                 if "url" in image_item:
-                    image_url, image_path = await self._download_image(image_item["url"], session)
+                    image_url, image_path = await self._download_image(
+                        image_item["url"], session
+                    )
                     return image_url, image_path, text_content, thought_signature
                 elif "b64_json" in image_item:
                     image_path = await save_base64_image(image_item["b64_json"], "png")
@@ -834,7 +872,9 @@ class GeminiAPIClient:
 
         return None, None
 
-    async def _extract_from_content(self, content: str) -> tuple[str | None, str | None]:
+    async def _extract_from_content(
+        self, content: str
+    ) -> tuple[str | None, str | None]:
         """从文本内容中提取图像"""
         pattern = r"data:image/([^;]+);base64,([A-Za-z0-9+/=\s]+)"
         matches = re.findall(pattern, content)

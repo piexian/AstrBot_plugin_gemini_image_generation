@@ -19,6 +19,7 @@ def get_plugin_data_dir() -> Path:
     """获取插件数据目录"""
     # 使用AstrBot的StarTools获取标准数据目录
     from astrbot.api.star import StarTools
+
     return StarTools.get_data_dir("astrbot_plugin_gemini_image_generation")
 
 
@@ -177,7 +178,9 @@ async def download_qq_avatar(
         avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=640"
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(avatar_url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.get(
+                avatar_url, timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status == 200:
                     avatar_data = await response.read()
 

@@ -31,7 +31,7 @@ from .tl.tl_utils import AvatarManager, download_qq_avatar, send_file
     "astrbot_plugin_gemini_image_generation",
     "piexian",
     "Gemini图像生成插件，支持生图和改图，可以自动获取头像作为参考",
-    "v1.4.0",
+    "v1.4.1",
 )
 class GeminiImageGenerationPlugin(Star):
     def __init__(self, context: Context, config: dict[str, Any]):
@@ -321,6 +321,7 @@ class GeminiImageGenerationPlugin(Star):
             return text
 
         import re
+
         text = re.sub(r"!\[.*?\]\(.*?\)", "", text)
         text = text.strip()
 
@@ -347,9 +348,7 @@ class GeminiImageGenerationPlugin(Star):
             if self._is_valid_base64_image_str(img):
                 valid.append(img)
             else:
-                self.log_debug(
-                    f"跳过非 base64 格式参考图像({source}): {img[:64]}..."
-                )
+                self.log_debug(f"跳过非 base64 格式参考图像({source}): {img[:64]}...")
 
         return valid
 
@@ -437,8 +436,11 @@ class GeminiImageGenerationPlugin(Star):
             try:
                 if img_source.startswith(("http://", "https://")):
                     import aiohttp
+
                     async with aiohttp.ClientSession() as session:
-                        async with session.get(img_source, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        async with session.get(
+                            img_source, timeout=aiohttp.ClientTimeout(total=10)
+                        ) as response:
                             if response.status == 200:
                                 image_data = await response.read()
                                 return base64.b64encode(image_data).decode("utf-8")
@@ -462,14 +464,20 @@ class GeminiImageGenerationPlugin(Star):
                     img_source = None
                     if hasattr(component, "url") and component.url:
                         img_source = component.url
-                    elif hasattr(component, "file") and component.file and isinstance(component.file, str):
+                    elif (
+                        hasattr(component, "file")
+                        and component.file
+                        and isinstance(component.file, str)
+                    ):
                         img_source = component.file
 
                     if img_source:
                         base64_img = await convert_to_base64(img_source)
                         if base64_img:
                             reference_images.append(base64_img)
-                            logger.debug(f"✓ 从当前消息提取图片 (当前: {len(reference_images)}/{max_images})")
+                            logger.debug(
+                                f"✓ 从当前消息提取图片 (当前: {len(reference_images)}/{max_images})"
+                            )
                 except Exception as e:
                     logger.warning(f"✗ 提取图片失败: {e}")
 
@@ -484,7 +492,11 @@ class GeminiImageGenerationPlugin(Star):
                             img_source = None
                             if hasattr(reply_comp, "url") and reply_comp.url:
                                 img_source = reply_comp.url
-                            elif hasattr(reply_comp, "file") and reply_comp.file and isinstance(reply_comp.file, str):
+                            elif (
+                                hasattr(reply_comp, "file")
+                                and reply_comp.file
+                                and isinstance(reply_comp.file, str)
+                            ):
                                 img_source = reply_comp.file
 
                             if img_source:
@@ -564,7 +576,12 @@ class GeminiImageGenerationPlugin(Star):
                 f"[TIMEOUT] tool_call_timeout={tool_timeout}s, per_retry_timeout={per_retry_timeout}s, max_retries={self.max_attempts_per_key}, max_total_time={max_total_time}s"
             )
 
-            image_url, image_path, text_content, thought_signature = await self.api_client.generate_image(
+            (
+                image_url,
+                image_path,
+                text_content,
+                thought_signature,
+            ) = await self.api_client.generate_image(
                 config=request_config,
                 max_retries=self.max_attempts_per_key,
                 per_retry_timeout=per_retry_timeout,
@@ -652,8 +669,22 @@ class GeminiImageGenerationPlugin(Star):
             self.log_debug(f"[MODIFY_DEBUG] 有效参考图片总数: {len(all_ref_images)}")
 
             # 改图提示词增强 - 检测是否包含修改意图关键词
-            modify_keywords = ["修改", "改图", "改成", "变成", "调整", "优化", "重做", "更换", "替换", "删除", "添加"]
-            is_modification_request = any(keyword in prompt for keyword in modify_keywords)
+            modify_keywords = [
+                "修改",
+                "改图",
+                "改成",
+                "变成",
+                "调整",
+                "优化",
+                "重做",
+                "更换",
+                "替换",
+                "删除",
+                "添加",
+            ]
+            is_modification_request = any(
+                keyword in prompt for keyword in modify_keywords
+            )
             self.log_debug(f"[MODIFY_DEBUG] 修改关键词匹配: {is_modification_request}")
 
             figure_keywords = ["手办", "figure", "模型", "手办化", "手办模型"]
@@ -694,13 +725,20 @@ class GeminiImageGenerationPlugin(Star):
             # 记录改图请求的详细信息
             self.log_debug("[MODIFY_DEBUG] API请求配置:")
             self.log_debug(f"  - 提示词: {enhanced_prompt[:100]}...")
-            self.log_debug(f"  - 参考图片数量: {len(all_ref_images) if all_ref_images else 0}")
+            self.log_debug(
+                f"  - 参考图片数量: {len(all_ref_images) if all_ref_images else 0}"
+            )
             self.log_debug(f"  - 是否改图请求: {is_modification_request}")
             self.log_debug(f"  - 模型: {self.model}")
 
             yield event.plain_result("🎨 生成中...")
 
-            image_url, image_path, text_content, thought_signature = await self.api_client.generate_image(
+            (
+                image_url,
+                image_path,
+                text_content,
+                thought_signature,
+            ) = await self.api_client.generate_image(
                 config=config,
                 max_retries=self.max_attempts_per_key,
                 per_retry_timeout=self.total_timeout,
@@ -708,7 +746,9 @@ class GeminiImageGenerationPlugin(Star):
             )
 
             if image_url and image_path:
-                logger.debug(f"准备发送图像: image_path类型={type(image_path)}, 值={image_path}")
+                logger.debug(
+                    f"准备发送图像: image_path类型={type(image_path)}, 值={image_path}"
+                )
 
                 if text_content and self.enable_text_response:
                     cleaned_text = self._clean_text_content(text_content)
@@ -969,12 +1009,18 @@ class GeminiImageGenerationPlugin(Star):
         enable_rate_limit = limit_settings.get("enable_rate_limit", False)
         rate_limit_period = limit_settings.get("rate_limit_period", 60)
         max_requests = limit_settings.get("max_requests_per_group", 5)
-        rate_limit_status = f"✓ {max_requests}次/{rate_limit_period}秒" if enable_rate_limit else "✗ 禁用"
+        rate_limit_status = (
+            f"✓ {max_requests}次/{rate_limit_period}秒"
+            if enable_rate_limit
+            else "✗ 禁用"
+        )
 
         tool_timeout = self.get_tool_timeout(event)
         timeout_warning = ""
         if tool_timeout < 90:
-            timeout_warning = f"⚠️ LLM工具超时时间较短({tool_timeout}秒)，建议设置为90-120秒"
+            timeout_warning = (
+                f"⚠️ LLM工具超时时间较短({tool_timeout}秒)，建议设置为90-120秒"
+            )
 
         try:
             import yaml
@@ -1005,7 +1051,7 @@ class GeminiImageGenerationPlugin(Star):
                 use_light_theme = is_daytime
             else:
                 # 手动指定主题
-                use_light_theme = (manual_theme == "light")
+                use_light_theme = manual_theme == "light"
 
             if use_light_theme:
                 # 白色主题配置
@@ -1079,22 +1125,26 @@ class GeminiImageGenerationPlugin(Star):
                 }
 
             # 添加通用数据
-            template_data.update({
-                "model": self.model,
-                "api_type": self.api_type,
-                "resolution": self.resolution,
-                "aspect_ratio": self.aspect_ratio or "默认",
-                "api_keys_count": len(self.api_keys),
-                "grounding_status": grounding_status,
-                "avatar_status": avatar_status,
-                "smart_retry_status": smart_retry_status,
-                "tool_timeout": tool_timeout,
-                "rate_limit_status": rate_limit_status,
-                "timeout_warning": timeout_warning if timeout_warning else ""
-            })
+            template_data.update(
+                {
+                    "model": self.model,
+                    "api_type": self.api_type,
+                    "resolution": self.resolution,
+                    "aspect_ratio": self.aspect_ratio or "默认",
+                    "api_keys_count": len(self.api_keys),
+                    "grounding_status": grounding_status,
+                    "avatar_status": avatar_status,
+                    "smart_retry_status": smart_retry_status,
+                    "tool_timeout": tool_timeout,
+                    "rate_limit_status": rate_limit_status,
+                    "timeout_warning": timeout_warning if timeout_warning else "",
+                }
+            )
 
             # 读取模板文件
-            template_path = os.path.join(os.path.dirname(__file__), "templates", "help_template.html")
+            template_path = os.path.join(
+                os.path.dirname(__file__), "templates", "help_template.html"
+            )
             with open(template_path, encoding="utf-8") as f:
                 jinja2_template = f.read()
 
@@ -1161,7 +1211,9 @@ class GeminiImageGenerationPlugin(Star):
         # 根据配置决定是否使用头像参考
         use_avatar = await self.should_use_avatar(event)
 
-        async for result in self._quick_generate_image(event, modification_prompt, use_avatar):
+        async for result in self._quick_generate_image(
+            event, modification_prompt, use_avatar
+        ):
             yield result
 
     @filter.command("换风格")

@@ -1,10 +1,12 @@
 """优化的图像生成提示词模块（基于 Gemini 官方文档）"""
 
+
 def enhance_prompt_for_gemini(prompt: str) -> str:
     """基于 Gemini 官方文档优化提示词"""
     # 直接返回用户的提示词，不添加强制的风格要求
     # 让用户自己控制风格（二次元、写实等）
     return prompt
+
 
 def enhance_prompt_for_figure(prompt: str) -> str:
     """手办化提示词增强（基于官方文档优化）"""
