@@ -83,6 +83,12 @@
         "hint": "在启用切割的同时，生成并发送表情包压缩文件(zip)。若发送失败将降级使用合并转发",
         "default": false
       },
+      "preserve_reference_image_size": {
+        "description": "改图保留参考图尺寸",
+        "type": "bool",
+        "hint": "启用后，改图/换风格等基于参考图的请求将不强制设置分辨率和长宽比，尽量沿用参考图尺寸。",
+        "default": false
+      },
       "enable_grounding": {
         "description": "启用 Google 搜索接地",
         "type": "bool",

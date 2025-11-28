@@ -284,6 +284,9 @@ class GeminiImageGenerationPlugin(Star):
         self.enable_text_response = image_settings.get("enable_text_response", False)
         self.enable_sticker_split = image_settings.get("enable_sticker_split", True)
         self.enable_sticker_zip = image_settings.get("enable_sticker_zip", False)
+        self.preserve_reference_image_size = image_settings.get(
+            "preserve_reference_image_size", False
+        )
         # 从配置中读取强制分辨率设置，默认为False
         self.force_resolution = image_settings.get("force_resolution", False)
 
@@ -576,6 +579,7 @@ class GeminiImageGenerationPlugin(Star):
         prompt: str,
         reference_images: list[str],
         avatar_reference: list[str],
+        is_modification: bool = False,
     ) -> tuple[bool, tuple[str, str, str | None] | str]:
         """
         内部核心图像生成方法，不发送消息，只返回结果
@@ -614,13 +618,25 @@ class GeminiImageGenerationPlugin(Star):
 The last {final_avatar_count} image(s) provided are User Avatars (marked as optional reference). You may use them for character consistency if needed, but they are NOT mandatory if they conflict with the requested style."""
 
         response_modalities = "TEXT_IMAGE" if self.enable_text_response else "IMAGE"
+        effective_resolution = self.resolution
+        effective_aspect_ratio = self.aspect_ratio
+
+        if (
+            self.preserve_reference_image_size
+            and is_modification
+            and all_reference_images
+        ):
+            effective_resolution = None
+            effective_aspect_ratio = None
+            self.log_debug("保留参考图尺寸，不覆盖分辨率/比例")
+
         request_config = ApiRequestConfig(
             model=self.model,
             prompt=prompt,
             api_type=self.api_type,
             api_base=self.api_base,
-            resolution=self.resolution,
-            aspect_ratio=self.aspect_ratio,
+            resolution=effective_resolution,
+            aspect_ratio=effective_aspect_ratio,
             enable_grounding=self.enable_grounding,
             response_modalities=response_modalities,
             reference_images=all_reference_images if all_reference_images else None,
@@ -771,13 +787,25 @@ The last {final_avatar_count} image(s) provided are User Avatars (marked as opti
             else:
                 enhanced_prompt = prompt
 
+            effective_resolution = self.resolution
+            effective_aspect_ratio = self.aspect_ratio
+
+            if (
+                self.preserve_reference_image_size
+                and is_modification_request
+                and all_ref_images
+            ):
+                effective_resolution = None
+                effective_aspect_ratio = None
+                self.log_debug("[MODIFY_DEBUG] 保留参考图尺寸，不覆盖分辨率/比例")
+
             config = ApiRequestConfig(
                 model=self.model,
                 prompt=enhanced_prompt,
                 api_type=self.api_type,
                 api_base=self.api_base if self.api_base else None,
-                resolution=self.resolution,
-                aspect_ratio=self.aspect_ratio,
+                resolution=effective_resolution,
+                aspect_ratio=effective_aspect_ratio,
                 enable_grounding=self.enable_grounding,
                 reference_images=all_ref_images if all_ref_images else None,
                 enable_smart_retry=self.enable_smart_retry,
@@ -1344,6 +1372,7 @@ The last {final_avatar_count} image(s) provided are User Avatars (marked as opti
             prompt=full_prompt,
             reference_images=reference_images,
             avatar_reference=avatar_reference,
+            is_modification=True,
         )
 
         if success and result_data:
@@ -1402,8 +1431,10 @@ The last {final_avatar_count} image(s) provided are User Avatars (marked as opti
             return
 
         reference_images = []
+        is_modification_request = False
         if str(use_reference_images).lower() in {"true", "1", "yes", "y", "是"}:
             reference_images = await self._collect_reference_images(event)
+            is_modification_request = bool(reference_images)
 
         avatar_reference = []
 
@@ -1435,6 +1466,7 @@ The last {final_avatar_count} image(s) provided are User Avatars (marked as opti
             prompt=prompt,
             reference_images=reference_images,
             avatar_reference=avatar_reference,
+            is_modification=is_modification_request,
         )
 
         try:
