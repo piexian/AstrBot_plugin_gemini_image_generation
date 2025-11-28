@@ -17,21 +17,40 @@ from astrbot.api.all import Image, Reply
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
-from .tl.enhanced_prompts import enhance_prompt_for_figure
+from .tl import create_zip, split_image
+from .tl.enhanced_prompts import (
+    enhance_prompt_for_figure,
+    get_auto_modification_prompt,
+    get_avatar_prompt,
+    get_card_prompt,
+    get_figure_prompt,
+    get_generation_prompt,
+    get_mobile_prompt,
+    get_modification_prompt,
+    get_poster_prompt,
+    get_sticker_prompt,
+    get_style_change_prompt,
+    get_wallpaper_prompt,
+)
 from .tl.tl_api import (
     APIClient,
     APIError,
     ApiRequestConfig,
     get_api_client,
 )
-from .tl.tl_utils import AvatarManager, download_qq_avatar, send_file
+from .tl.tl_utils import (
+    AvatarManager,
+    cleanup_old_images,
+    download_qq_avatar,
+    send_file,
+)
 
 
 @register(
     "astrbot_plugin_gemini_image_generation",
     "piexian",
     "Gemini图像生成插件，支持生图和改图，可以自动获取头像作为参考",
-    "v1.4.1",
+    "v1.5.0",
 )
 class GeminiImageGenerationPlugin(Star):
     def __init__(self, context: Context, config: dict[str, Any]):
@@ -39,9 +58,39 @@ class GeminiImageGenerationPlugin(Star):
         self.config = config
         self.api_client: APIClient | None = None
         self.avatar_manager = AvatarManager()
+        self._cleanup_task: asyncio.Task | None = None
 
         # 加载配置
         self._load_config()
+
+        # 启动定时清理任务
+        self._start_cleanup_task()
+
+    def _start_cleanup_task(self):
+        """启动定时清理任务"""
+        if self._cleanup_task and not self._cleanup_task.done():
+            return
+
+        async def cleanup_loop():
+            while True:
+                try:
+                    await cleanup_old_images()
+                    # 每30分钟执行一次
+                    await asyncio.sleep(1800)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    logger.warning(f"清理任务异常: {e}")
+                    await asyncio.sleep(300)
+
+        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        logger.debug("定时清理任务已启动")
+
+    def terminate(self):
+        """插件卸载/重载时调用"""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            logger.debug("定时清理任务已停止")
 
     def get_tool_timeout(self, event: AstrMessageEvent | None = None) -> int:
         """获取当前聊天环境的 tool_call_timeout 配置"""
@@ -229,6 +278,10 @@ class GeminiImageGenerationPlugin(Star):
         self.enable_grounding = image_settings.get("enable_grounding", False)
         self.max_reference_images = image_settings.get("max_reference_images", 6)
         self.enable_text_response = image_settings.get("enable_text_response", False)
+        self.enable_sticker_split = image_settings.get("enable_sticker_split", True)
+        self.enable_sticker_zip = image_settings.get("enable_sticker_zip", False)
+        # 从配置中读取强制分辨率设置，默认为False
+        self.force_resolution = image_settings.get("force_resolution", False)
 
         retry_settings = self.config.get("retry_settings", {})
         self.max_attempts_per_key = retry_settings.get("max_attempts_per_key", 3)
@@ -556,6 +609,7 @@ class GeminiImageGenerationPlugin(Star):
             reference_images=all_reference_images if all_reference_images else None,
             enable_smart_retry=self.enable_smart_retry,
             enable_text_response=self.enable_text_response,
+            force_resolution=self.force_resolution,
         )
 
         logger.info("🎨 图像生成请求:")
@@ -695,16 +749,7 @@ class GeminiImageGenerationPlugin(Star):
                 self.log_debug("[MODIFY_DEBUG] 使用手办化提示词增强")
             elif is_modification_request:
                 # 对于改图请求，进一步强化提示词
-                enhanced_prompt = f"""图像修改任务：{prompt}
-
-请严格按照用户要求修改参考图像，确保：
-1. 必须基于提供的参考图像进行修改
-2. 保持主要对象和构图，只修改用户要求的部分
-3. 修改后的图像要与原图有明显区别
-4. 不要返回完全相同的原图
-5. 修改要自然、合理，保持图像质量
-
-重要：这是一项图像修改任务，不是生成新图像，必须基于参考图像进行修改！"""
+                enhanced_prompt = get_auto_modification_prompt(prompt)
                 self.log_debug("[MODIFY_DEBUG] 使用改图提示词增强")
             else:
                 enhanced_prompt = prompt
@@ -750,12 +795,16 @@ class GeminiImageGenerationPlugin(Star):
                     f"准备发送图像: image_path类型={type(image_path)}, 值={image_path}"
                 )
 
+                result_chain = []
                 if text_content and self.enable_text_response:
                     cleaned_text = self._clean_text_content(text_content)
                     if cleaned_text:
-                        yield event.plain_result(f"📝 {cleaned_text}")
+                        result_chain.append(event.plain_result(f"📝 {cleaned_text}"))
 
-                yield event.image_result(image_path)
+                result_chain.append(event.image_result(image_path))
+
+                for res in result_chain:
+                    yield res
 
                 if thought_signature:
                     logger.debug(f"🧠 思维签名: {thought_signature[:50]}...")
@@ -772,26 +821,8 @@ class GeminiImageGenerationPlugin(Star):
                 logger.warning(f"清理头像缓存失败: {e}")
 
     def _enhance_prompt_for_figure(self, prompt: str) -> str:
-        """手办化提示词增强"""
-        figure_keywords = ["手办", "figure", "模型", "手办化", "手办模型"]
-        if any(keyword in prompt.lower() for keyword in figure_keywords):
-            return f"""请将此照片中的主要对象精确转换为写实的、杰作级别的 1/7 比例 PVC 手办。
-在手办旁边应放置一个盒子：盒子正面应有一个大型清晰的透明窗口，印有主要艺术作品、产品名称、品牌标志、条形码，以及一个小规格或真伪验证面板。盒子的角落还必须贴有小价签。同时，在后方放置一个电脑显示器，显示器屏幕需要显示该手办的 ZBrush 建模过程。
-在包装盒前方，手办应放置在圆形塑料底座上。手办必须有 3D 立体感和真实感，PVC 材质的纹理需要清晰表现。
-
-{prompt}
-
-质量要求：
-- 修复任何缺失部分时，必须没有执行不佳的元素
-- 人体部位必须自然，动作必须协调，所有部位比例必须合理
-- 如果原始照片不是全身照，请尝试补充手办使其成为全身版本
-- 人物表情和动作必须与照片完全一致
-- 手办头部不应显得太大，腿部不应显得太短，手办不应看起来矮胖（除非明确是Q版设计）
-- 对于动物手办，应减少毛发的真实感和细节层次，使其更像手办而不是真实的原始生物
-- 不应有外轮廓线，手办绝不能是平面的
-- 注意近大远小的透视关系"""
-
-        return prompt
+        """手办化提示词增强（已废弃，保留兼容性）"""
+        return enhance_prompt_for_figure(prompt)
 
     @filter.command("生图")
     async def generate_image(self, event: AstrMessageEvent, prompt: str):
@@ -809,14 +840,7 @@ class GeminiImageGenerationPlugin(Star):
 
         use_avatar = await self.should_use_avatar(event)
 
-        # 构造生图专用提示词，确保生成意图明确
-        generation_prompt = f"""图像生成任务：{prompt}
-
-重要要求：
-- 根据用户的描述生成全新的原创图像
-- 生成图像要完全符合用户的描述要求
-
-重要：这是一项图像生成任务，请根据描述创建全新的图像！"""
+        generation_prompt = get_generation_prompt(prompt)
 
         yield event.plain_result("🎨 开始生成图像...")
 
@@ -848,9 +872,14 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = "1K"
             self.aspect_ratio = "1:1"
 
+            # 使用新提示词函数
+            full_prompt = get_avatar_prompt(prompt)
+
             use_avatar = await self.should_use_avatar(event)
 
-            async for result in self._quick_generate_image(event, prompt, use_avatar):
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
                 yield result
 
         finally:
@@ -875,9 +904,14 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = "2K"
             self.aspect_ratio = "16:9"
 
+            # 使用新提示词函数
+            full_prompt = get_poster_prompt(prompt)
+
             use_avatar = await self.should_use_avatar(event)
 
-            async for result in self._quick_generate_image(event, prompt, use_avatar):
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
                 yield result
 
         finally:
@@ -902,9 +936,14 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = "4K"
             self.aspect_ratio = "16:9"
 
+            # 使用新提示词函数
+            full_prompt = get_wallpaper_prompt(prompt)
+
             use_avatar = await self.should_use_avatar(event)
 
-            async for result in self._quick_generate_image(event, prompt, use_avatar):
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
                 yield result
 
         finally:
@@ -929,9 +968,14 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = "1K"
             self.aspect_ratio = "3:2"
 
+            # 使用新提示词函数
+            full_prompt = get_card_prompt(prompt)
+
             use_avatar = await self.should_use_avatar(event)
 
-            async for result in self._quick_generate_image(event, prompt, use_avatar):
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
                 yield result
 
         finally:
@@ -956,9 +1000,14 @@ class GeminiImageGenerationPlugin(Star):
             self.resolution = "2K"
             self.aspect_ratio = "9:16"
 
+            # 使用新提示词函数
+            full_prompt = get_mobile_prompt(prompt)
+
             use_avatar = await self.should_use_avatar(event)
 
-            async for result in self._quick_generate_image(event, prompt, use_avatar):
+            async for result in self._quick_generate_image(
+                event, full_prompt, use_avatar
+            ):
                 yield result
 
         finally:
@@ -976,8 +1025,20 @@ class GeminiImageGenerationPlugin(Star):
 
         yield event.plain_result("🎨 使用手办化模式生成图像...")
 
-        base_prompt = "将画面中的角色重塑为顶级收藏级树脂手办，全身动态姿势，置于角色主题底座，高精度材质，手工涂装，肌肤纹理与服装材质真实分明。戏剧性硬光为主光源，凸显立体感，无过曝；强效补光消除死黑，细节完整可见。背景为窗边景深模糊，侧后方隐约可见产品包装盒。博物馆级摄影质感，全身细节无损，面部结构精准。禁止：任何2D元素或照搬原图、塑料感、面部模糊、五官错位、细节丢失。"
-        full_prompt = base_prompt if not prompt else f"{base_prompt}\n{prompt}"
+        # 解析参数
+        style_type = 1
+        clean_prompt = prompt
+
+        if prompt:
+            p_lower = prompt.lower()
+            if p_lower.startswith("1") or "pvc" in p_lower:
+                style_type = 1
+                clean_prompt = prompt.replace("1", "", 1).replace("pvc", "", 1).strip()
+            elif p_lower.startswith("2") or "gk" in p_lower:
+                style_type = 2
+                clean_prompt = prompt.replace("2", "", 1).replace("gk", "", 1).strip()
+
+        full_prompt = get_figure_prompt(clean_prompt, style_type)
 
         old_resolution = self.resolution
         old_aspect_ratio = self.aspect_ratio
@@ -995,6 +1056,149 @@ class GeminiImageGenerationPlugin(Star):
         finally:
             self.resolution = old_resolution
             self.aspect_ratio = old_aspect_ratio
+
+    @quick_mode_group.command("表情包")
+    async def quick_sticker(self, event: AstrMessageEvent, prompt: str):
+        """表情包快速模式 - 4K分辨率，16:9比例，Q版LINE风格
+
+        功能受配置文件控制：
+        - enable_sticker_split: 是否自动切割图片
+        - enable_sticker_zip: 是否打包发送（如果发送失败则使用合并转发）
+        """
+        allowed, limit_message = await self._check_and_consume_limit(event)
+        if not allowed:
+            if limit_message:
+                yield event.plain_result(limit_message)
+            return
+
+        yield event.plain_result("🎨 使用表情包模式生成图像...")
+
+        # 检查是否包含参考图
+        reference_images = await self._collect_reference_images(event)
+        if not reference_images:
+            yield event.plain_result("❌ 表情包模式需要参考图，请至少附带一张图片作为角色参考。")
+            return
+
+        # 如果没有开启切割功能，直接使用默认逻辑
+        if not self.enable_sticker_split:
+            full_prompt = get_sticker_prompt(prompt)
+            old_resolution = self.resolution
+            old_aspect_ratio = self.aspect_ratio
+
+            try:
+                self.resolution = "4K"
+                self.aspect_ratio = "16:9"
+                use_avatar = await self.should_use_avatar(event)
+                async for result in self._quick_generate_image(
+                    event, full_prompt, use_avatar
+                ):
+                    yield result
+            finally:
+                self.resolution = old_resolution
+                self.aspect_ratio = old_aspect_ratio
+            return
+
+        # 开启了切割功能，执行自定义逻辑
+        full_prompt = get_sticker_prompt(prompt)
+        old_resolution = self.resolution
+        old_aspect_ratio = self.aspect_ratio
+
+        try:
+            self.resolution = "4K"
+            self.aspect_ratio = "16:9"
+
+            use_avatar = await self.should_use_avatar(event)
+
+            # 调用生图核心逻辑，但截获结果不直接发送
+            reference_images = await self._collect_reference_images(event)
+            avatar_reference = []
+            if use_avatar:
+                avatar_reference = await self.get_avatar_reference(event)
+
+            success, result_data = await self._generate_image_core_internal(
+                event=event,
+                prompt=full_prompt,
+                reference_images=reference_images,
+                avatar_reference=avatar_reference,
+            )
+
+            if success and result_data:
+                image_path, text_content, thought_signature = result_data
+
+                # 1. 切割图片
+                yield event.plain_result("✂️ 正在切割图片...")
+                try:
+                    split_files = await asyncio.to_thread(
+                        split_image, image_path, rows=6, cols=4
+                    )
+                except Exception as e:
+                    logger.error(f"切割图片时发生异常: {e}")
+                    split_files = []
+
+                if not split_files:
+                    yield event.plain_result("❌ 图片切割失败")
+                    yield event.image_result(image_path)
+                    return
+
+                # 2. 准备发送逻辑
+                sent_success = False
+
+                # 如果开启了ZIP，优先尝试发送ZIP
+                if self.enable_sticker_zip:
+                    zip_path = create_zip(split_files)
+                    if zip_path:
+                        try:
+                            from astrbot.api.message_components import File
+
+                            file_comp = File(
+                                file=zip_path, name=os.path.basename(zip_path)
+                            )
+                            yield event.chain_result([file_comp])
+                            sent_success = True
+
+                            yield event.image_result(image_path)
+                        except Exception as e:
+                            logger.warning(f"发送ZIP失败: {e}")
+                            yield event.plain_result(
+                                "⚠️ 压缩包发送失败，降级使用合并转发"
+                            )
+                            sent_success = False
+                    else:
+                        yield event.plain_result("❌ 压缩包创建失败，降级使用合并转发")
+                        sent_success = False
+
+            # 3. 如果没开启ZIP或者ZIP发送失败，发送合并转发
+            if not sent_success:
+                from astrbot.api.message_components import Image as AstrImage
+                from astrbot.api.message_components import Node, Plain
+
+                # 构造节点内容：原图 + 所有小图
+                node_content = []
+                node_content.append(Plain("原图预览：\n"))
+                node_content.append(AstrImage.fromFileSystem(image_path))
+                node_content.append(Plain("\n\n表情包切片：\n"))
+
+                for file_path in split_files:
+                    node_content.append(AstrImage.fromFileSystem(file_path))
+
+                # 构造单个节点，包含所有图片
+                node = Node(
+                    uin=event.message_obj.self_id,
+                    name="Gemini表情包生成",
+                    content=node_content,
+                )
+
+                yield event.chain_result([node])
+            else:
+                yield event.plain_result(str(result_data))
+
+        finally:
+            self.resolution = old_resolution
+            self.aspect_ratio = old_aspect_ratio
+            try:
+                await self.avatar_manager.cleanup_used_avatars()
+            except Exception:
+                pass
 
     @filter.command("生图帮助")
     async def show_help(self, event: AstrMessageEvent):
@@ -1049,119 +1253,81 @@ class GeminiImageGenerationPlugin(Star):
             # 获取主题配置
             service_settings = self.config.get("service_settings", {})
             theme_settings = service_settings.get("theme_settings", {})
-            enable_auto_theme = theme_settings.get("enable_auto_theme", True)
-            day_theme_start = theme_settings.get("day_theme_start", 6)
-            day_theme_end = theme_settings.get("day_theme_end", 18)
-            manual_theme = theme_settings.get("manual_theme", "light")
 
-            # 判断当前应该使用的主题
-            if enable_auto_theme:
-                # 自动主题切换
+            # 解析配置
+            mode = theme_settings.get("mode", "cycle")
+            cycle_config = theme_settings.get("cycle_config", {})
+            single_config = theme_settings.get("single_config", {})
+
+            # 确定要使用的模板文件名
+            template_filename = "help_template_light"  # 默认值
+
+            if mode == "single":
+                # 单独模式
+                template_filename = single_config.get(
+                    "template_name", "help_template_light"
+                )
+            else:
+                # 循环模式 (默认)
+                day_start = cycle_config.get("day_start", 6)
+                day_end = cycle_config.get("day_end", 18)
+                day_template = cycle_config.get("day_template", "help_template_light")
+                night_template = cycle_config.get(
+                    "night_template", "help_template_dark"
+                )
+
                 current_hour = datetime.now().hour
-                is_daytime = day_theme_start <= current_hour < day_theme_end
-                use_light_theme = is_daytime
-            else:
-                # 手动指定主题
-                use_light_theme = manual_theme == "light"
+                if day_start <= current_hour < day_end:
+                    template_filename = day_template
+                else:
+                    template_filename = night_template
 
-            if use_light_theme:
-                # 白色主题配置
-                template_data = {
-                    "title": f"Gemini 图像生成插件 {version}",
-                    "background_color": "#E6F3FF",
-                    "text_color": "#1a5490",
-                    "container_bg": "rgba(255, 255, 255, 0.95)",
-                    "border_color": "#4a90e2",
-                    "box_shadow": "0 0 20px rgba(74, 144, 226, 0.3)",
-                    "scanline_color": "rgba(74, 144, 226, 0)",
-                    "header_color": "#2c5aa0",
-                    "header_shadow": "rgba(44, 90, 160, 0.3)",
-                    "version_color": "#4a90e2",
-                    "section_border": "#4a90e2",
-                    "section_title_color": "#2c5aa0",
-                    "section_title_shadow": "rgba(44, 90, 160, 0.2)",
-                    "status_text_color": "#2c5aa0",
-                    "status_ok_color": "#28a745",
-                    "status_warning_color": "#ffc107",
-                    "status_error_color": "#dc3545",
-                    "command_border": "rgba(74, 144, 226, 0.2)",
-                    "command_name_color": "#2c5aa0",
-                    "command_desc_color": "#1a5490",
-                    "example_color": "#6c757d",
-                    "feature_text_color": "#1a5490",
-                    "feature_icon_color": "#4a90e2",
-                    "tip_text_color": "#2c5aa0",
-                    "tip_icon_color": "#6f42c1",
-                    "warning_text_color": "#856404",
-                    "warning_bg_color": "#fff3cd",
-                    "warning_border_color": "#ffeaa7",
-                    "scanlines_enabled": True,
-                    "pulse_enabled": True,
-                    "flicker_enabled": True,
-                }
-            else:
-                # 黑色主题配置
-                template_data = {
-                    "title": f"Gemini 图像生成插件 {version}",
-                    "background_color": "#1a1a1a",
-                    "text_color": "#e0e0e0",
-                    "container_bg": "rgba(40, 40, 40, 0.95)",
-                    "border_color": "#00bcd4",
-                    "box_shadow": "0 0 20px rgba(0, 188, 212, 0.3)",
-                    "scanline_color": "rgba(0, 188, 212, 0)",
-                    "header_color": "#00bcd4",
-                    "header_shadow": "rgba(0, 188, 212, 0.3)",
-                    "version_color": "#00acc1",
-                    "section_border": "#00bcd4",
-                    "section_title_color": "#00bcd4",
-                    "section_title_shadow": "rgba(0, 188, 212, 0.2)",
-                    "status_text_color": "#e0e0e0",
-                    "status_ok_color": "#4caf50",
-                    "status_warning_color": "#ff9800",
-                    "status_error_color": "#f44336",
-                    "command_border": "rgba(0, 188, 212, 0.2)",
-                    "command_name_color": "#00bcd4",
-                    "command_desc_color": "#b0bec5",
-                    "example_color": "#757575",
-                    "feature_text_color": "#b0bec5",
-                    "feature_icon_color": "#00bcd4",
-                    "tip_text_color": "#e0e0e0",
-                    "tip_icon_color": "#9c27b0",
-                    "warning_text_color": "#ff9800",
-                    "warning_bg_color": "#4e342e",
-                    "warning_border_color": "#ff6f00",
-                    "scanlines_enabled": True,
-                    "pulse_enabled": True,
-                    "flicker_enabled": True,
-                }
+            # 自动补全 .html 后缀
+            if not template_filename.endswith(".html"):
+                template_filename += ".html"
 
-            # 添加通用数据
-            template_data.update(
-                {
-                    "model": self.model,
-                    "api_type": self.api_type,
-                    "resolution": self.resolution,
-                    "aspect_ratio": self.aspect_ratio or "默认",
-                    "api_keys_count": len(self.api_keys),
-                    "grounding_status": grounding_status,
-                    "avatar_status": avatar_status,
-                    "smart_retry_status": smart_retry_status,
-                    "tool_timeout": tool_timeout,
-                    "rate_limit_status": rate_limit_status,
-                    "timeout_warning": timeout_warning if timeout_warning else "",
-                }
+            # 构建模板路径
+            template_path = os.path.join(
+                os.path.dirname(__file__), "templates", template_filename
             )
+
+            # 检查文件是否存在，不存在则回退
+            if not os.path.exists(template_path):
+                logger.warning(f"模板文件不存在: {template_path}，将回退到默认模板")
+                template_filename = "help_template_light.html"
+                template_path = os.path.join(
+                    os.path.dirname(__file__), "templates", template_filename
+                )
+
+                # 如果默认模板也不存在（极端情况），抛出异常让外层处理
+                if not os.path.exists(template_path):
+                    raise FileNotFoundError(f"找不到模板文件: {template_path}")
+
+            # 准备模板数据
+            template_data = {
+                "title": f"Gemini 图像生成插件 {version}",
+                # 以下字段是为了兼容可能使用了旧变量的模板，虽然新设计应该由css控制
+                "model": self.model,
+                "api_type": self.api_type,
+                "resolution": self.resolution,
+                "aspect_ratio": self.aspect_ratio or "默认",
+                "api_keys_count": len(self.api_keys),
+                "grounding_status": grounding_status,
+                "avatar_status": avatar_status,
+                "smart_retry_status": smart_retry_status,
+                "tool_timeout": tool_timeout,
+                "rate_limit_status": rate_limit_status,
+                "timeout_warning": timeout_warning if timeout_warning else "",
+                "enable_sticker_split": self.enable_sticker_split,
+            }
 
             # 读取模板文件
-            template_path = os.path.join(
-                os.path.dirname(__file__), "templates", "help_template.html"
-            )
             with open(template_path, encoding="utf-8") as f:
                 jinja2_template = f.read()
 
             # 使用AstrBot的html_render方法
             html_image_url = await self.html_render(jinja2_template, template_data)
-            logger.info("HTML帮助图片生成成功")
+            logger.info(f"HTML帮助图片生成成功 (使用模板: {template_filename})")
             yield event.image_result(html_image_url)
 
         except Exception as e:
@@ -1208,14 +1374,7 @@ class GeminiImageGenerationPlugin(Star):
             return
 
         # 构造改图专用提示词，确保修改意图明确
-        modification_prompt = f"""请根据参考图像进行以下修改：{prompt}
-
-重要要求：
-- 必须基于提供的参考图像进行修改，不能忽略原图
-- 保持图像的整体构图和主要对象
-- 严格按照用户要求进行修改，不要返回原图
-- 如果修改涉及颜色、风格或背景，必须有明显变化
-- 确保修改后的图像与原图有可区分的差异"""
+        modification_prompt = get_modification_prompt(prompt)
 
         yield event.plain_result("🎨 开始修改图像...")
 
@@ -1242,9 +1401,7 @@ class GeminiImageGenerationPlugin(Star):
                 yield event.plain_result(limit_message)
             return
 
-        full_prompt = f"将参考图像改为{style}风格"
-        if prompt:
-            full_prompt += f"，{prompt}"
+        full_prompt = get_style_change_prompt(style, prompt)
 
         reference_images = await self._collect_reference_images(event)
 
@@ -1265,12 +1422,16 @@ class GeminiImageGenerationPlugin(Star):
         if success and result_data:
             image_path, text_content, thought_signature = result_data
 
+            result_chain = []
             if text_content and self.enable_text_response:
                 cleaned_text = self._clean_text_content(text_content)
                 if cleaned_text:
-                    yield event.plain_result(f"📝 {cleaned_text}")
+                    result_chain.append(event.plain_result(f"📝 {cleaned_text}"))
 
-            yield event.image_result(image_path)
+            result_chain.append(event.image_result(image_path))
+
+            for res in result_chain:
+                yield res
 
             if thought_signature:
                 logger.debug(f"🧠 思维签名: {thought_signature[:50]}...")
@@ -1357,12 +1518,16 @@ class GeminiImageGenerationPlugin(Star):
         if success and result_data:
             image_path, text_content, thought_signature = result_data
 
+            result_chain = []
             if text_content and self.enable_text_response:
                 cleaned_text = self._clean_text_content(text_content)
                 if cleaned_text:
-                    yield event.plain_result(cleaned_text)
+                    result_chain.append(event.plain_result(cleaned_text))
 
-            yield event.image_result(image_path)
+            result_chain.append(event.image_result(image_path))
+
+            for res in result_chain:
+                yield res
 
             if thought_signature:
                 logger.debug(f"🧠 思维签名: {thought_signature[:50]}...")

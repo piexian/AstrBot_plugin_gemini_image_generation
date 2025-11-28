@@ -1,5 +1,5 @@
 """
-API客户端模块 y
+API客户端模块
 提供Google Gemini和OpenAI兼容API的客户端实现
 """
 
@@ -21,11 +21,10 @@ import aiohttp
 
 from astrbot.api import logger
 
-# 导入本地模块
 try:
     from .tl_utils import get_plugin_data_dir, save_base64_image, save_image_data
 except ImportError:
-    # 如果tl_utils不存在，先创建简单的占位符
+
     async def save_base64_image(
         base64_data: str, image_format: str = "png"
     ) -> str | None:
@@ -57,6 +56,7 @@ class ApiRequestConfig:
     response_text: str | None = None  # 存储文本响应
     enable_smart_retry: bool = True  # 智能重试开关
     enable_text_response: bool = False  # 文本响应开关
+    force_resolution: bool = False  # 强制传递分辨率参数
 
     # 官方文档推荐参数
     temperature: float = 0.7  # 控制生成随机性，0.0-1.0
@@ -277,7 +277,11 @@ class GeminiAPIClient:
 
         # 仅在 Gemini 3 Pro Image 系列模型下传递 image_size
         model_name = (config.model or "").lower()
-        is_gemini_image_model = "gemini-3-pro-image" in model_name
+        is_gemini_image_model = (
+            "gemini-3-pro-image" in model_name
+            or "gemini-3-pro-preview" in model_name
+            or config.force_resolution  # 如果强制开启，则忽略模型名称检查
+        )
 
         if is_gemini_image_model and config.resolution:
             # 前端 router 侧直接传递 "1K"/"2K"/"4K"，这里保持一致
@@ -549,6 +553,10 @@ class GeminiAPIClient:
 
     def _is_retryable_error(self, error_type: str, exception: Exception) -> bool:
         """判断错误是否可重试"""
+        # 特殊处理：未生成图像的重试
+        if error_type == "no_image_retry":
+            return True
+
         # 可重试的错误：超时、网络错误、服务器错误
         if error_type in ["timeout", "network"]:
             return True
@@ -589,7 +597,9 @@ class GeminiAPIClient:
             except json.JSONDecodeError as e:
                 logger.error(f"JSON 解析失败: {e}")
                 logger.error(f"响应内容前500字符: {response_text[:500]}")
-                raise APIError(f"API 返回了无效的 JSON 响应: {e}", response.status) from None
+                raise APIError(
+                    f"API 返回了无效的 JSON 响应: {e}", response.status
+                ) from None
 
             if response.status == 200:
                 logger.debug("API 调用成功")
@@ -722,12 +732,14 @@ class GeminiAPIClient:
         ):
             # 所有非思考part都是文本，没有图像
             text_content = " ".join([p["text"] for p in text_parts])
-            logger.error("API只返回了文本响应，未生成图像")
-            logger.error(f"文本内容: {text_content[:200]}...")
+            logger.warning("API只返回了文本响应，未生成图像，将触发重试")
+            logger.warning(f"文本内容: {text_content[:200]}...")
+
+            # 抛出可重试的错误
             raise APIError(
-                "图像生成失败：API只返回了文本响应。请检查模型名称是否正确，可能需要使用支持图像生成的模型（如 gemini-3-pro-image-preview）",
-                None,
-                "no_image",
+                "图像生成失败：API只返回了文本响应，正在重试...",
+                500,  # 使用500状态码触发重试逻辑
+                "no_image_retry",
             )
 
         logger.error("未在响应中找到图像数据")
@@ -846,7 +858,12 @@ class GeminiAPIClient:
 
         # 如果只有文本内容，也返回
         if text_content:
-            return None, None, text_content, thought_signature
+            # 如果配置了需要文本响应，且确实没有找到图片，这里应该报错触发重试而不是直接返回文本
+            # 除非这是一个纯文本请求（但在生图插件里通常不是）
+            logger.warning("OpenRouter只返回了文本响应，未生成图像，将触发重试")
+            raise APIError(
+                "图像生成失败：API只返回了文本响应，正在重试...", 500, "no_image_retry"
+            )
 
         logger.warning("OpenRouter 响应格式不支持或未找到图像数据")
         return None, None, None, None

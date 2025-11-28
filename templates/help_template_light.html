@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --bg-color: #f6f8fa;
+            --card-bg: #ffffff;
+            --border-color: #d0d7de;
+            --text-primary: #1F2328;
+            --text-secondary: #656d76;
+            --accent-color: #0969da;
+            --success-color: #1a7f37;
+            --warning-color: #9a6700;
+            --error-color: #cf222e;
+            --code-bg: rgba(175, 184, 193, 0.2);
+        }
+
+        body {
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;b
+            min-height: 100vh;
+            color: var(--text-primary);
+        }
+
+        .container {
+            width: 100%;
+            /* max-width: 1400px; */
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 25px;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tag {
+            background: #ddf4ff;
+            color: var(--accent-color);
+            padding: 6px 14px;
+            border-radius: 100px;
+            font-size: 14px;
+            font-weight: 500;
+            border: 1px solid rgba(56, 139, 253, 0.3);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            display: block;
+            width: 5px;
+            height: 18px;
+            background: var(--accent-color);
+            border-radius: 2px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            background: #f6f8fa;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .status-item {
+            font-size: 15px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-item span {
+            color: var(--text-primary);
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            flex-shrink: 0;
+        }
+
+        .dot.warn { background-color: var(--warning-color); }
+        .dot.error { background-color: var(--error-color); }
+
+        .command-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .command-item {
+            background: #f6f8fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .cmd-code {
+            font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+            color: var(--accent-color);
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .cmd-desc {
+            font-size: 15px;
+            color: var(--text-primary);
+            line-height: 1.5;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .cmd-ex {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-style: italic;
+            display: block;
+        }
+
+        .quick-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .quick-item {
+            background: #f6f8fa;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: left;
+        }
+
+        .quick-name {
+            color: var(--accent-color);
+            font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .quick-desc {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .quick-meta {
+            color: var(--text-secondary);
+            font-size: 13px;
+            display: block;
+        }
+
+        .features {
+            background: #f6f8fa;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .feature-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .feature-row:last-child { margin-bottom: 0; }
+
+        .feature-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .feature-row strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .tips-section {
+            margin-top: 30px;
+            padding-top: 25px;
+            border-top: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .tip-col {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .tip-item {
+            display: flex;
+            gap: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            align-items: flex-start;
+            line-height: 1.5;
+        }
+
+        .tip-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .tip-text strong {
+            color: var(--text-primary);
+        }
+
+        .warning-box {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff8c5;
+            border: 1px solid #d4a72c;
+            color: #bf8700;
+            border-radius: 8px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+
+        .footer {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            color: var(--text-primary);
+            font-weight: 500;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">🎨 {{ title }}</div>
+            <div class="tag">Light Mode</div>
+        </div>
+
+        <div class="grid">
+            <!-- Left Column -->
+            <div>
+                <div class="section-title">系统状态</div>
+                <div class="status-grid">
+                    <div class="status-item"><div class="dot"></div>模型: <span>{{ model }}</span></div>
+                    <div class="status-item"><div class="dot"></div>API类型: <span>{{ api_type }}</span></div>
+                    <div class="status-item"><div class="dot"></div>分辨率: <span>{{ resolution }}</span></div>
+                    <div class="status-item"><div class="dot"></div>长宽比: <span>{{ aspect_ratio }}</span></div>
+                    <div class="status-item"><div class="dot"></div>API密钥: <span>{{ api_keys_count }}个</span></div>
+                    <div class="status-item"><div class="dot {% if '禁用' in grounding_status %}warn{% endif %}"></div>搜索接地: <span>{{ grounding_status }}</span></div>
+                    <div class="status-item"><div class="dot {% if '禁用' in avatar_status %}warn{% endif %}"></div>自动头像: <span>{{ avatar_status }}</span></div>
+                    <div class="status-item"><div class="dot {% if '禁用' in smart_retry_status %}warn{% endif %}"></div>智能重试: <span>{{ smart_retry_status }}</span></div>
+                    <div class="status-item"><div class="dot {% if tool_timeout < 90 %}warn{% endif %}"></div>LLM超时: <span>{{ tool_timeout }}秒</span></div>
+                    <div class="status-item"><div class="dot"></div>速率限制: <span>{{ rate_limit_status }}</span></div>
+                </div>
+                {% if timeout_warning %}
+                <div class="warning-box"><span>⚠️</span> 警告: {{ timeout_warning }}</div>
+                {% endif %}
+
+                <div class="section-title" style="margin-top: 30px;">基础指令</div>
+                <div class="command-list">
+                    <div class="command-item">
+                        <span class="cmd-code">/生图 [描述文字]</span>
+                        <span class="cmd-desc">纯文本生成图像，支持自然语言描述</span>
+                        <span class="cmd-ex">示例: /生图 一只可爱的橙色小猫，坐在樱花树下，动漫风格，高清细节</span>
+                    </div>
+                    <div class="command-item">
+                        <span class="cmd-code">/改图 [修改描述]</span>
+                        <span class="cmd-desc">基于参考图片进行修改或重新生成</span>
+                        <span class="cmd-ex">示例: 发送图片 + /改图 把头发改成红色，增加背景虚化效果</span>
+                    </div>
+                    <div class="command-item">
+                        <span class="cmd-code">/换风格 [风格类型]</span>
+                        <span class="cmd-desc">将图片转换为指定艺术风格</span>
+                        <span class="cmd-ex">示例: 发送图片 + /换风格 动漫 梦幻效果</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div>
+                <div class="section-title">快速模式</div>
+                <div class="quick-grid">
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 头像 [描述]</span>
+                        <span class="quick-desc">生成专业头像</span>
+                        <span class="quick-meta">内置参数: 1K分辨率，1:1比例</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 海报 [描述]</span>
+                        <span class="quick-desc">制作宣传海报</span>
+                        <span class="quick-meta">内置参数: 2K分辨率，16:9比例</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 壁纸 [描述]</span>
+                        <span class="quick-desc">生成高清壁纸</span>
+                        <span class="quick-meta">内置参数: 4K分辨率，16:9比例</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 卡片 [描述]</span>
+                        <span class="quick-desc">设计名片卡片</span>
+                        <span class="quick-meta">内置参数: 1K分辨率，3:2比例</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 手机 [描述]</span>
+                        <span class="quick-desc">制作手机壁纸</span>
+                        <span class="quick-meta">内置参数: 2K分辨率，9:16比例</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 手办化 [1/2] [描述]</span>
+                        <span class="quick-desc">树脂收藏级手办效果</span>
+                        <span class="quick-meta">参数: 1(PVC)/2(GK)，默认PVC</span>
+                    </div>
+                    <div class="quick-item">
+                        <span class="quick-name">/快速 表情包 [描述]</span>
+                        <span class="quick-desc">Q版LINE风格表情包{% if enable_sticker_split %}（自动切割）{% endif %}</span>
+                        <span class="quick-meta">参数: 4K分辨率，16:9比例。需附带参考图</span>
+                    </div>
+                </div>
+
+                <div class="section-title" style="margin-top: 30px;">智能头像功能</div>
+                <div class="features">
+                    <div class="feature-row">
+                        <div class="feature-icon">👤</div>
+                        <div><strong>@用户提及:</strong> @小王 生成动漫头像 - 自动获取被@用户的头像作为参考</div>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-icon">🔍</div>
+                        <div><strong>关键词触发:</strong> "按照我"、"根据我"、"我的头像"等自动获取发送者头像</div>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-icon">📎</div>
+                        <div><strong>引用图片:</strong> 回复或引用图片时自动将其作为参考图使用</div>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-icon">🎯</div>
+                        <div><strong>优先级系统:</strong> @用户 > 发送者 > 引用图片，智能选择最佳参考</div>
+                    </div>
+                    <div class="feature-row">
+                        <div class="feature-icon">💾</div>
+                        <div><strong>缓存机制:</strong> 自动缓存用户头像，避免重复下载，提升响应速度</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tips-section">
+            <div class="tip-col">
+                <div class="section-title" style="margin-bottom: 10px; font-size: 16px;">使用技巧</div>
+                <div class="tip-item">
+                    <div class="tip-icon">💡</div>
+                    <div class="tip-text"><strong>详细描述</strong>: 提示词越具体，包含主体、风格、细节、质量词汇，效果越好</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-icon">🔑</div>
+                    <div class="tip-text"><strong>多API密钥</strong>: 建议配置多个Google API密钥，提高成功率和并发能力</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-icon">⏰</div>
+                    <div class="tip-text"><strong>耐心等待</strong>: 高质量图像生成需要时间，请避免频繁重复发送相同请求</div>
+                </div>
+            </div>
+            <div class="tip-col">
+                <div class="section-title" style="margin-bottom: 10px; font-size: 16px; opacity: 0;">更多技巧</div>
+                <div class="tip-item">
+                    <div class="tip-icon">🎨</div>
+                    <div class="tip-text"><strong>风格词汇</strong>: 动漫/写实/水彩/油画/像素/赛博朋克/中国风/和风等</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-icon">📐</div>
+                    <div class="tip-text"><strong>分辨率选择</strong>: 1K适合头像，2K平衡质量速度，4K最高质量适合壁纸</div>
+                </div>
+                <div class="tip-item">
+                    <div class="tip-icon">🔄</div>
+                    <div class="tip-text"><strong>智能重试</strong>: 启用后自动重试失败的请求，确保生成成功率</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            ✨ 系统就绪，开始创作精彩的AI图像吧！ ✨
+        </div>
+    </div>
+</body>
+</html>

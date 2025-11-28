@@ -71,6 +71,18 @@
           "2:3"
         ]
       },
+      "enable_sticker_split": {
+        "description": "启用表情包切割",
+        "type": "bool",
+        "hint": "在表情包模式下，自动将生成的一张包含多表情的图片切割成独立的表情图，并以合并转发形式发送",
+        "default": true
+      },
+      "enable_sticker_zip": {
+        "description": "启用表情包打包发送",
+        "type": "bool",
+        "hint": "在启用切割的同时，生成并发送表情包压缩文件(zip)。若发送失败将降级使用合并转发",
+        "default": false
+      },
       "enable_grounding": {
         "description": "启用 Google 搜索接地",
         "type": "bool",
@@ -87,6 +99,12 @@
         "description": "启用文本响应",
         "type": "bool",
         "hint": "启用后模型将在返回图片的同时返回文本说明。关闭后只返回图片（仅限gemini 3有效）",
+        "default": false
+      },
+      "force_resolution": {
+        "description": "强制传递分辨率参数",
+        "type": "bool",
+        "hint": "启用后，无论模型名称是什么，都强制传递 image_size 参数给 API。如果使用非 gemini-3-pro-image-preview 模型但支持分辨率参数，请开启此选项。",
         "default": false
       }
     }
@@ -148,37 +166,63 @@
       "theme_settings": {
         "description": "主题设置",
         "type": "object",
-        "hint": "配置帮助页面的主题切换和显示效果",
+        "hint": "配置帮助页面的主题切换模式",
         "items": {
-          "enable_auto_theme": {
-            "description": "启用自动主题切换",
-            "type": "bool",
-            "hint": "启用后根据时间自动切换白天/黑夜主题，关闭后使用手动指定的主题",
-            "default": true
-          },
-          "day_theme_start": {
-            "description": "白天主题开始时间",
-            "type": "int",
-            "hint": "选择白天主题开始的小时数（0-23点）",
-            "default": 6,
-            "options": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-          },
-          "day_theme_end": {
-            "description": "白天主题结束时间",
-            "type": "int",
-            "hint": "选择白天主题结束的小时数（0-23点）",
-            "default": 18,
-            "options": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
-          },
-          "manual_theme": {
-            "description": "手动指定主题",
+          "mode": {
+            "description": "切换模式",
             "type": "string",
-            "hint": "当自动主题切换关闭时，强制使用的主题",
-            "default": "light",
+            "hint": "选择主题加载模式。Cycle: 循环模式（随时间切换）；Single: 单独模式（固定使用一个）。",
+            "default": "cycle",
             "options": [
-              "light",
-              "dark"
+              "cycle",
+              "single"
             ]
+          },
+          "cycle_config": {
+            "description": "循环模式配置",
+            "type": "object",
+            "hint": "仅在 cycle 模式下生效",
+            "items": {
+              "day_start": {
+                "description": "白天开始时间",
+                "type": "int",
+                "hint": "选择白天开始的小时数（0-23点）",
+                "default": 6,
+                "options": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+              },
+              "day_end": {
+                "description": "白天结束时间",
+                "type": "int",
+                "hint": "选择白天结束的小时数（0-23点）",
+                "default": 18,
+                "options": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+              },
+              "day_template": {
+                "description": "白天模板文件",
+                "type": "string",
+                "hint": "白天使用的模板文件名（位于 templates/ 目录下）",
+                "default": "help_template_light"
+              },
+              "night_template": {
+                "description": "黑夜模板文件",
+                "type": "string",
+                "hint": "黑夜使用的模板文件名（位于 templates/ 目录下）",
+                "default": "help_template_dark"
+              }
+            }
+          },
+          "single_config": {
+            "description": "单独模式配置",
+            "type": "object",
+            "hint": "仅在 single 模式下生效",
+            "items": {
+              "template_name": {
+                "description": "模板文件名",
+                "type": "string",
+                "hint": "要固定的模板文件名（位于 templates/ 目录下）",
+                "default": "help_template_light"
+              }
+            }
           }
         }
       }
